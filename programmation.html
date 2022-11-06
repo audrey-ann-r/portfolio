@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Audrey-Ann Ratajczak - programmation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset="windows-1252">
+</head>
+<style>
+    
+.header {
+  padding: 1px;
+  text-align: center;
+  background: white;
+  color: black;
+  font-size: 15px;
+  font-family: "Tw Cen MT";
+  width: 100%;
+
+position: sticky;
+top: 0
+  
+} 
+
+.text{
+/*    border: 2px solid black;*/
+    padding-top: 0px;
+    font-size: 16px;
+    
+    margin-left: 100px;
+    margin-right: 100px;
+    margin-top: 50px;
+    margin-bottom: 50px;
+    background: black;
+
+    
+    
+    }
+    
+body{
+    font-family: "Lucida Sans";
+    background-image: url(img/bgcoffee2.jpg);
+    background-size: cover;
+    padding-top: 0px;
+   
+    } 
+
+code{
+        font-size: 16px;
+       margin-left: 10px;
+        color: grey;
+
+    }
+
+pre{
+   white-space: pre-wrap;
+  word-wrap: break-word;
+  text-align: justify;
+    
+    }
+    
+.rubrique{
+    border: 2px solid black;
+    padding: 25px;
+    font-size: 85%;
+
+    background: white;
+    color: black
+
+    
+    
+    }
+    
+@media only screen and (max-width: 600px) {
+    .text{
+    border: 2px solid black;
+    padding: 2px;
+    font-size: 100%;
+    font-size: 16px;
+    margin: 2px;
+    background: black;
+    
+    }
+    
+code{
+        font-size: 12px;
+       margin-left: 10px;
+        color: grey;
+
+    }
+    
+    
+    
+    
+    }
+
+    
+.a1{
+    text-decoration: none;
+    color: black;
+    }
+    
+.a1:hover{
+    color: #760ab1
+    }
+
+
+    
+    </style>
+<body>
+    
+<div class="header">
+    <a class=a1 href="index.html"><h1><b>Audrey-Ann Ratajczak</b></h1></a>
+</div>
+    
+    
+<div class="text"> 
+    <div class="rubrique"><h1>Script pour migration de fichier dans un bucket S3</h1>
+    <p>Ce script a été fait sous le cadre de mon stage chez 4.71<br><br>
+        Elle importe des données base64 stockées dans d'une base de données SQL. Ensuite elle les convertit en fichier PDF. Enfin, ces documents sont migrées dans un bucket S3
+        </p>
+    </div>
+    
+
+<code><pre>
+    import os.path
+    import time
+
+    import psycopg2
+    import boto3
+    import hashlib
+    from base64 import b64decode
+
+    def connectToDatabase():
+        DB_HOST = ""
+        DB_NAME = ""
+        DB_USER = ""
+        DB_PASS = ""
+        DB_PORT = ""
+
+        mydb = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOST, port=DB_PORT)
+
+        print("Connected to database")
+
+        return mydb
+
+    def Filedata(mydb, row):
+        cursor = mydb.cursor()
+        cursor.execute("select file_data From (Select Row_Number() Over (Order By id) As RowNum , 
+        * From writing_attachment ) t2 Where RowNum =" + str(row))
+        filedata = cursor.fetchone()
+        filedata = str(filedata)
+
+        return filedata
+
+    def FileId(mydb, row):
+        cursor = mydb.cursor()
+        cursor.execute("select id From (Select Row_Number() Over (Order By id) As RowNum ,
+        * From writing_attachment ) t2 Where RowNum =" + str(row))
+
+        fileId = cursor.fetchone()
+        fileId = str(fileId)
+
+        return fileId
+
+
+    def FileName(mydb, row , fileId):
+        cursor = mydb.cursor()
+        cursor.execute("select filename From (Select Row_Number() Over (Order By id) As RowNum ,
+        * From writing_attachment ) t2 Where RowNum =" + str(row))
+        filename = cursor.fetchone()
+        filename = str(filename)
+        filename = str(filename)[:len(filename) - 3]
+        filename = filename[2:]
+        filename = filename.replace("/", "_")
+        fileId = str(fileId)[:len(fileId) - 2]
+        fileId = fileId[1:]
+
+        filename = fileId + "_" + filename
+
+        return filename
+
+    def FilePDF(path, filedata, filename):
+
+        b64decode(filedata)
+        completeFilename = os.path.join(path, filename)
+        file = open(completeFilename, 'wb' )
+        file.write(b64decode(filedata))
+
+    def GetDirectory(dir_name):
+        directory = dir_name
+        root = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(root, directory)
+
+        if os.path.exists(path) == False:
+            os.mkdir(path)
+
+        return path
+
+    def Hash(filedata):
+        hashfile = filedata.encode("utf-8")
+        hashfile = hashlib.sha512(hashfile)
+        hashfile = hashfile.hexdigest()
+
+        return hashfile
+
+    def myClient():
+        client = boto3.client('s3',
+                              aws_access_key_id='',
+                              aws_secret_access_key='',
+                              endpoint_url='')
+
+        return client
+
+    def myResource():
+        resource = boto3.resource('s3',
+                                 aws_access_key_id='',
+                                 aws_secret_access_key='',
+                                 endpoint_url='')
+
+        return resource
+
+    def addObject(client, nameBucket, path, listOfHash):
+        listOfFiles = os.listdir(path)
+        #root = os.path.dirname(os.path.abspath(__file__))
+
+        for i in range(len(listOfFiles)):
+            listOfFiles[i] = os.path.join(path, listOfFiles[i])
+            client.upload_file(listOfFiles[i], nameBucket, listOfHash[i])
+
+
+
+    def createLog():
+        if os.path.exists("log.txt") == False:
+            log = open('log.txt', 'w')
+
+            return log
+
+    def addInfoLog(log, listOfFileName, listOfHash, bucketName):
+        log = open("log.txt", 'a')
+        #log.write(f"les fichiers suivants ont été transférés dans le bucket {bucketName}:\n\n")
+        #currentTime = time.strftime("%H:%M:%S")
+        #log.write(f"date: {currentTime}\n\n")
+
+
+        #for i in range(len(listOfFileName)):
+        log.write(f"filename: {listOfFileName} |  hash: {listOfHash} \n" )
+
+        return log
+
+    log = createLog()
+    dir_name = input("saississez un nom de dossier")
+    path = GetDirectory(dir_name)
+    print(path)
+    mydb = connectToDatabase()
+    client = myClient()
+    resource = myResource()
+    nameBucket = input("saisissez le nom du bucket")
+
+    row = 1
+
+    begin = time.time()
+
+    listOfHash = []
+    listOfFileName = []
+
+    while row &lt;= 14342:
+        print(row)
+        filedata = Filedata(mydb, row)
+        fileId = FileId(mydb, row)
+        filename = FileName(mydb, row, fileId)
+        filePDF = FilePDF(path, filedata, filename)
+        hashfile = Hash(filedata)
+        log = addInfoLog(log, filename, hashfile, nameBucket)
+        #listOfHash.append(hashfile)
+        #listOfFileName.append(filename)
+        client.upload_file(os.path.join(path, filename), nameBucket, hashfile)
+
+        row = row + 1
+
+
+
+
+
+
+    end = time.time()
+    print("temps exécuté :", (end - begin), "s")
+
+    '''addFile = input("voulez vous ajouter des objets ? (o/n)")
+    if addFile == "o":
+        nameBucket = input("saisissez le nom du bucket ")
+        addObject(client, nameBucket, path, listOfHash)
+        log = createLog()
+        log = addInfoLog(log, listOfFileName, listOfHash, nameBucket)'''
+
+
+</pre></code> </div>
+    
+    
+    <div class="text">
+<div class="rubrique"><h1>Fonction vérification données fichier excel</h1>
+    <p>
+    Ces fonctions ont été ajoutées dans un script déjà existant réalisé par 4.71.
+      Ils permettent de vérifier si le numéro de dossier figure dans le tableau excel et si les données de celui ci sont correctes. 
+    
+    <p></div>
+        
+    <code><pre>
+        def check_if_foldername_is_in_G_column(directory):
+        file = r"C:\Users\Audrey-Ann\Desktop\471\Python\Code_Script_Baker\Fichier contrÃ¯Å¼Â½le.xlsx"
+        xldata = pd.read_excel(file, sheet_name="Feuille1")
+        mylist = []
+        i = 0
+        for i in range(915):
+            x1_value1 = str(int(xldata["Id_CEGID-STREGO_Client"][i]))
+            mylist.append(x1_value1)
+            i = i + 1
+
+        if directory in mylist:
+            return True
+        else:
+            return False
+
+    def check_if_BU_is_not_None(directory):
+        if check_if_foldername_is_in_G_column(directory) is True:
+            file = r"C:\Users\Audrey-Ann\Desktop\471\Python\Code_Script_Baker\Fichier contrÃ¯Å¼Â½le.xlsx"
+            xldata = pd.read_excel(file, sheet_name="Feuille1")
+            mylist = []
+            for i in range(915):
+                x1_value1 = str(int(xldata["Id_CEGID-STREGO_Client"][i]))
+                mylist.append(x1_value1)
+                i = i + 1
+
+            if str(int(xldata["Id_CEGID-STREGO_Client"][mylist.index(directory)])) == None:
+                return False
+
+            else:
+                return True
+
+    def check_if_AC_is_not_None(directory):
+        if check_if_foldername_is_in_G_column(directory) is True:
+            file = r"C:\Users\Audrey-Ann\Desktop\471\Python\Code_Script_Baker\Fichier contrÃ¯Å¼Â½le.xlsx"
+            xldata = pd.read_excel(file, sheet_name="Feuille1")
+            mylist = []
+            for i in range(915):
+                x1_value1 = str(int(xldata["Id_CEGID-STREGO_Client"][i]))
+                mylist.append(x1_value1)
+                i = i + 1
+
+            if str(int(xldata["Date de cloture"][mylist.index(directory)])) == None:
+                return False
+
+            else:
+                return True
+
+    def check_if_AC_is_ok(directory):
+        if check_if_AC_is_not_None(directory) is True:
+            files = os.listdir(directory)
+            regex = r"PROVISOIRE"
+            for file in files:
+                if re.research(regex, file) is not None:
+                    actual_file = file
+        print(actual_file)
+        
+        
+    </pre></code>
+        
+    </div>
+    
+    
+    
+    
+<div class="text">
+<div class="rubrique"><h1>Carrée rose tkinter</h1>
+    <p>
+        C'est juste une interface graphique avec un carrée rose. On peut le déplacer avec les flèches du clavier.
+        C'est pas grand chose mais j'en suis fière :)
+    
+    <p></div>
+
+<code><pre>
+    import time
+    from tkinter import *
+    class Entite:
+
+            def __init__(self, x, y, image, root, isVisible):
+
+                self._x = 0
+                self._y = 0
+                self._image = None
+                self._root = None
+                self._isVisible = True
+
+
+                self._x = x
+                self._y = y
+                self._image = image
+                self._root = root
+                self._isVisible = isVisible
+
+                w = Canvas(self._root, width=500, height=500)
+                rect = w.create_rectangle(self._x, self._y, 100, 100, fill="pink", outline='pink')
+                w.place(x=0, y=0)
+                #self._isVisible = False
+
+                if self._isVisible == False:
+                    w.forget()
+
+                self._root.bind('&lt;Right&gt;', lambda event: self._MoveRight(w, rect))
+                self._root.bind('&lt;Left&gt;', lambda event: self._MoveLeft(w, rect))
+                self._root.bind('&lt;Up&gt;', lambda event: self._MoveUp(w, rect))
+                self._root.bind('&lt;Down&gt;', lambda event: self._MoveDown(w, rect))
+
+            def _MoveLeft(self, w, rect):
+
+
+                self._x = - 6
+                self._y = 0
+
+
+                print("move left", self._x)
+                w.move(rect, self._x, self._y)
+
+
+
+            def _MoveRight(self, w, rect):
+                self._x =  6
+                self._y = 0
+                w.move(rect, self._x, self._y)
+                print("move right")
+
+            def _MoveUp(self, w, rect):
+                self._x = 0
+                self._y = - 6
+                w.move(rect, self._x, self._y)
+                print("move up")
+
+            def _MoveDown(self, w, rect):
+                self._x = 0
+                self._y = 6
+                w.move(rect, self._x, self._y)
+                print("move up")
+
+
+            def _Event(self, evente):
+                pass
+
+
+    root = Tk()
+    root.geometry("500x500")
+
+    carre = Entite(250, 250, None, root, True)
+    
+    
+    
+</pre>
+    </code>
+    </div>
+    
+
+    
+
+    
+    
+
+
+
+</body>
+</html>
